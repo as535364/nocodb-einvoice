@@ -42,7 +42,7 @@ docker run -d --name nocodb-einvoice \
   -e EINVOICE_USERNAME=your-username \
   -e EINVOICE_PASSWORD=your-password \
   -e CRON_SCHEDULE="0 3 * * *" \
-  ghcr.io/gnehs/nocodb-einvoice:latest
+  ghcr.io/as535364/nocodb-einvoice:latest
 ```
 
 > 程式將自動建立相關資料表，請勿修改資料表與欄位名稱
@@ -52,8 +52,8 @@ docker run -d --name nocodb-einvoice \
 - 參考上述說明或 `.env.example` 建立 `.env` 檔案
 
 ```bash
-pnpm install
-pnpm start
+bun install
+node index.js
 ```
 
 ## 特別感謝
