@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { fetch, CookieJar } from "node-fetch-cookies";
 import { classifyImage } from "./ocr.js";
-import { createInvoice, isInvoiceExists } from "./db.js";
+import { createInvoice, getExistingInvoiceIds } from "./db.js";
 import { setTimeout } from "timers/promises";
 
 const REQUEST_TIMEOUT = process.env.REQUEST_TIMEOUT || 1000;
@@ -38,7 +38,7 @@ async function login() {
       "https://service-mc.einvoice.nat.gov.tw/act/login/api/act002i/captcha"
     ).then((x) => x.json());
     code = await classifyImage(Buffer.from(image, "base64"));
-    if (code.match(/^\d{5}$/) && code.trim().length === 5) {
+    if (code.match(/^\d{5}$/)) {
       log(`測試驗證碼：${code}`);
 
       await setTimeout(REQUEST_TIMEOUT);
@@ -92,10 +92,13 @@ async function login() {
     throw new Error("已達到最大驗證碼嘗試次數，不建議繼續");
   }
 }
-async function syncMonthEinvoice(year, month) {
-  let sid = [...cookieJar.cookiesDomain("service-mc.einvoice.nat.gov.tw")].find(
+async function syncMonthEinvoice(year, month, existingIds) {
+  const sid = [...cookieJar.cookiesDomain("service-mc.einvoice.nat.gov.tw")].find(
     (cookie) => cookie.name === "sid"
   ).value;
+  const authedHeaders = { ...headers, Authorization: `Bearer ${sid}` };
+  const detailReferrer =
+    "https://www.einvoice.nat.gov.tw/portal/btc/mobile/btc502w/detail";
 
   const date = new Date();
   const currentYear = date.getFullYear();
@@ -113,10 +116,7 @@ async function syncMonthEinvoice(year, month) {
     cookieJar,
     "https://service-mc.einvoice.nat.gov.tw/btc/cloud/api/btc502w/getSearchCarrierInvoiceListJWT",
     {
-      headers: {
-        ...headers,
-        Authorization: `Bearer ${sid}`,
-      },
+      headers: authedHeaders,
       referrer:
         "https://www.einvoice.nat.gov.tw/portal/btc/mobile/btc502w/search",
       referrerPolicy: "no-referrer-when-downgrade",
@@ -139,12 +139,8 @@ async function syncMonthEinvoice(year, month) {
       cookieJar,
       `https://service-mc.einvoice.nat.gov.tw/btc/cloud/api/btc502w/searchCarrierInvoice?page=${currentPage}&size=100`,
       {
-        headers: {
-          ...headers,
-          Authorization: `Bearer ${sid}`,
-        },
-        referrer:
-          "https://www.einvoice.nat.gov.tw/portal/btc/mobile/btc502w/detail",
+        headers: authedHeaders,
+        referrer: detailReferrer,
         referrerPolicy: "no-referrer-when-downgrade",
         body: JSON.stringify({ token }),
         method: "POST",
@@ -159,9 +155,8 @@ async function syncMonthEinvoice(year, month) {
     totalPages = searchCarrierInvoice.totalPages;
 
     log(`- 正在取得第 ${currentPage + 1}/${totalPages} 頁發票`);
-    for (let item of searchCarrierInvoice.content) {
-      if (await isInvoiceExists(item.invoiceNumber)) {
-        // 發票已存在
+    for (const item of searchCarrierInvoice.content) {
+      if (existingIds.has(item.invoiceNumber)) {
         continue;
       }
       await setTimeout(REQUEST_TIMEOUT);
@@ -169,12 +164,8 @@ async function syncMonthEinvoice(year, month) {
         cookieJar,
         "https://service-mc.einvoice.nat.gov.tw/btc/cloud/api/common/getCarrierInvoiceData",
         {
-          headers: {
-            ...headers,
-            Authorization: `Bearer ${sid}`,
-          },
-          referrer:
-            "https://www.einvoice.nat.gov.tw/portal/btc/mobile/btc502w/detail",
+          headers: authedHeaders,
+          referrer: detailReferrer,
           referrerPolicy: "no-referrer-when-downgrade",
           body: JSON.stringify(item.token),
           method: "POST",
@@ -185,14 +176,10 @@ async function syncMonthEinvoice(year, month) {
       await setTimeout(REQUEST_TIMEOUT);
       const invoiceDetail = await fetch(
         cookieJar,
-        "https://service-mc.einvoice.nat.gov.tw/btc/cloud/api/common/getCarrierInvoiceDetail?page=0&size=10",
+        "https://service-mc.einvoice.nat.gov.tw/btc/cloud/api/common/getCarrierInvoiceDetail?page=0&size=500",
         {
-          headers: {
-            ...headers,
-            Authorization: `Bearer ${sid}`,
-          },
-          referrer:
-            "https://www.einvoice.nat.gov.tw/portal/btc/mobile/btc502w/detail",
+          headers: authedHeaders,
+          referrer: detailReferrer,
           referrerPolicy: "no-referrer-when-downgrade",
           body: JSON.stringify(item.token),
           method: "POST",
@@ -205,14 +192,16 @@ async function syncMonthEinvoice(year, month) {
         invoiceData,
         invoiceDetail.content
       );
+      existingIds.add(item.invoiceNumber);
       log(`- 發票 ${item.invoiceNumber} 新增成功`);
     }
     currentPage++;
-  } while (currentPage + 1 < totalPages);
+  } while (currentPage < totalPages);
 }
 export async function syncEinvoice() {
   await login();
-  // get sid value
+  const existingIds = await getExistingInvoiceIds();
+  log(`已有 ${existingIds.size} 筆發票`);
 
   const date = new Date();
   const currentYear = date.getFullYear();
@@ -240,7 +229,7 @@ export async function syncEinvoice() {
     while (SYNC_RETRY < 3) {
       try {
         log(`正在同步 ${year} 年 ${month} 月發票`);
-        await syncMonthEinvoice(year, month);
+        await syncMonthEinvoice(year, month, existingIds);
         break;
       } catch (error) {
         SYNC_RETRY++;
