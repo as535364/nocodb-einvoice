@@ -1,18 +1,14 @@
-### Base
-FROM node:22-slim as base
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-ENV TZ=Asia/Taipei
-RUN corepack enable
+FROM oven/bun:1 AS base
 WORKDIR /app
 
-FROM base AS prod-deps
-COPY package.json .
-COPY pnpm-lock.yaml .
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
+FROM base AS deps
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
 
-FROM base
-COPY --from=prod-deps /app/node_modules /app/node_modules
+FROM node:22-slim
+ENV TZ=Asia/Taipei
+WORKDIR /app
+COPY --from=deps /app/node_modules /app/node_modules
 COPY . .
 
 ENV NOCODB_URL=""
