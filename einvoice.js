@@ -9,7 +9,7 @@ const MAX_CAPTCHA_RETRY = 10;
 const MAX_SYNC_MONTHS = process.env.MAX_SYNC_MONTHS;
 
 function log(...args) {
-  console.log(new Date().toLocaleTimeString(), `[發票]`, ...args);
+  console.log(new Date().toLocaleString('sv-SE'), `[發票]`, ...args);
 }
 let cookieJar = new CookieJar();
 const headers = {
