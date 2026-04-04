@@ -8,11 +8,11 @@ const api = new Api({
   },
 });
 function log(...args) {
-  console.log(new Date().toLocaleTimeString(), `[資料庫]`, ...args);
+  console.log(new Date().toLocaleString('sv-SE'), `[資料庫]`, ...args);
 }
 
 function logError(error) {
-  console.error(new Date().toLocaleTimeString(), `[資料庫錯誤]`, {
+  console.error(new Date().toLocaleString('sv-SE'), `[資料庫錯誤]`, {
     name: error.name,
     message: error.message,
     stack: error.stack,
